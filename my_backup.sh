@@ -43,7 +43,7 @@ SNAPSHOT_DIR=/home/stevanatto/Dropbox/backup
 
 # directories to backup
 LOCATION=(
-    /home/stevanatto/Dropbox/prg_backup_SC
+    /home/stevanatto/Documents
 )
 #TODO: Perform tests with ssh locations
 #TODO: Perform tests where names contain spaces
@@ -114,18 +114,12 @@ function rotate() {
     # ones.
 
     # Time in seconds
-    ONE_MINUTE=1
-    ONE_HOUR=60
-    ONE_DAY=1200
+    ONE_MINUTE=60
+    ONE_HOUR=60*$ONE_MINUTE
+    ONE_DAY=24*$ONE_HOUR
     ONE_WEEK=7*$ONE_DAY
-    ONE_MONTH=7200
-    ONE_YEAR=21600
-#    ONE_MINUTE=60
-#    ONE_HOUR=60*$ONE_MINUTE
-#    ONE_DAY=24*$ONE_HOUR
-#    ONE_WEEK=7*$ONE_DAY
-#    ONE_MONTH=30*$ONE_DAY
-#    ONE_YEAR=12*$ONE_MONTH
+    ONE_MONTH=30*$ONE_DAY
+    ONE_YEAR=12*$ONE_MONTH
     #DATE_NOW_S=`date "+%s"`
     
     ALL_SNAPSHOTS=(`ls -tAd $SNAPSHOT_DIR/$ADDRESS/*`)
@@ -148,7 +142,7 @@ function rotate() {
         (( (( $(( (DISTANCES[$m] -DISTANCES[$n] )%ONE_YEAR )) < $ONE_WEEK )) &&
            (( $(( (DISTANCES[$m] -DISTANCES[$n] )/ONE_YEAR )) > 0 )) ))
         then
-            echo "$n,$(((DISTANCES[$m]-DISTANCES[$n])/ONE_YEAR)) ${ALL_SNAPSHOTS[$n]} is a valid YEARly backup for this location. Keep it."
+            echo "$n ${ALL_SNAPSHOTS[$n]} is a valid YEARly backup for this location. Keep it."
             KEEP=(${KEEP[*]} ${ALL_SNAPSHOTS[$n]} )
             m=$n
             #echo "$m $((ONE_YEAR -ONE_WEEK)) < $(( (DISTANCES[$m] -DISTANCES[$n] )%ONE_YEAR )),$(( (DISTANCES[$m] -DISTANCES[$n] )/ONE_YEAR )) < $((ONE_WEEK))"
@@ -218,10 +212,10 @@ function rotate() {
            (( (( $(( DISTANCES[$n] %ONE_HOUR )) < $((5*ONE_MINUTE)) )) &&
               (( $(( DISTANCES[$n] /ONE_HOUR )) >= $m )) ))
         then
-            #echo "$n ${ALL_SNAPSHOTS[$n]} is a valid HOURly backup for this location. Keep it."
+            echo "$n ${ALL_SNAPSHOTS[$n]} is a valid HOURly backup for this location. Keep it."
             KEEP=(${KEEP[*]} ${ALL_SNAPSHOTS[$n]} )
             ((m++))
-            echo "$m $((ONE_HOUR -5*ONE_MINUTE)) < $((DISTANCES[$n]/ONE_HOUR)),$(( DISTANCES[$n] %ONE_HOUR )) < $((5*ONE_MINUTE))"
+            #echo "$m $((ONE_HOUR -5*ONE_MINUTE)) < $((DISTANCES[$n]/ONE_HOUR)),$(( DISTANCES[$n] %ONE_HOUR )) < $((5*ONE_MINUTE))"
         fi
         if (( ${DISTANCES[$n]} > $(((HOURLY_INTERVAL-1)*ONE_HOUR -5*ONE_MINUTE)) )); then break; fi
     done
@@ -233,10 +227,10 @@ function rotate() {
         if [[ ! " ${KEEP[@]} " =~ " ${D} " ]]; then
             echo "$D is an uncecessary backup. Delete it."
             # DEBUG
-            echo "$((ONE_YEAR -ONE_WEEK)) < $(( (DISTANCES[$m] -DISTANCES[$n] )%ONE_YEAR )),$(( (DISTANCES[$m] -DISTANCES[$n] )/ONE_YEAR )) < $((ONE_WEEK))"
-            echo "$((ONE_MONTH -ONE_DAY)) < $((DISTANCE/ONE_MONTH)),$((DISTANCE%ONE_MONTH)) < $((ONE_DAY))"
-            echo "$((ONE_DAY -ONE_HOUR)) < $((DISTANCE/ONE_DAY)),$((DISTANCE%ONE_DAY)) < $((ONE_HOUR))"
-            echo "$((ONE_HOUR -5*ONE_MINUTE)) < $((DISTANCES[$n]/ONE_HOUR)),$(( DISTANCES[$n] %ONE_HOUR )) < $((5*ONE_MINUTE))"
+            #echo "$((ONE_YEAR -ONE_WEEK)) < $(( (DISTANCES[$m] -DISTANCES[$n] )%ONE_YEAR )),$(( (DISTANCES[$m] -DISTANCES[$n] )/ONE_YEAR )) < $((ONE_WEEK))"
+            #echo "$((ONE_MONTH -ONE_DAY)) < $((DISTANCE/ONE_MONTH)),$((DISTANCE%ONE_MONTH)) < $((ONE_DAY))"
+            #echo "$((ONE_DAY -ONE_HOUR)) < $((DISTANCE/ONE_DAY)),$((DISTANCE%ONE_DAY)) < $((ONE_HOUR))"
+            #echo "$((ONE_HOUR -5*ONE_MINUTE)) < $((DISTANCES[$n]/ONE_HOUR)),$(( DISTANCES[$n] %ONE_HOUR )) < $((5*ONE_MINUTE))"
             # GUBED
             rm -fr "$D"
         fi
@@ -270,27 +264,27 @@ function my_mv() {
 # ------------- the script itself ---------------------------------------------
 {
     # make sure we're running as root
-#    if (( `id -u` != 0 )); then { echo "Sorry, must be root.   Exiting..."; exit; } fi
+    if (( `id -u` != 0 )); then { echo "Sorry, must be root.   Exiting..."; exit; } fi
 
     # if a backup process is already running, exit
-#    lockdir=/tmp/my_backup.lock
-#    if mkdir "$lockdir"; then
-#        # Remove lockdir when the script finishes, or when it receives a signal
-#        trap 'rm -rf "$lockdir"' 0  # remove directory when script finishes
+    lockdir=/tmp/my_backup.lock
+    if mkdir "$lockdir"; then
+        # Remove lockdir when the script finishes, or when it receives a signal
+        trap 'rm -rf "$lockdir"' 0  # remove directory when script finishes
         #trap "exit 2" 1 2 3 15     # terminate script when receiving signal
-#    else
-#        echo "Cannot acquire lock (Already running).    Exiting..."
-#        exit 0
-#    fi
+    else
+        echo "Cannot acquire lock (Already running).    Exiting..."
+        exit 0
+    fi
 
     # attempt to remount the RW mount point as RW; else abort
-#    mount -o remount,rw $MOUNT_DEVICE $SNAPSHOT_DIR ;
-#    if (( $? )); then
-#    {
-#        echo "snapshot: could not remount $SNAPSHOT_DIR readwrite";
-#        exit;
-#    }
-#    fi;
+    mount -o remount,rw $MOUNT_DEVICE $SNAPSHOT_DIR ;
+    if (( $? )); then
+    {
+        echo "snapshot: could not remount $SNAPSHOT_DIR readwrite";
+        exit;
+    }
+    fi;
 
     # execute the jobs
     if (( $MAX_JOBS > 0 )); then
@@ -307,12 +301,12 @@ function my_mv() {
     wait
 
     # now remount the RW snapshot mountpoint as readonly
-#    mount -o remount,ro $MOUNT_DEVICE $SNAPSHOT_DIR ;
-#    if (( $? )); then
-#    {
-#        echo "snapshot: could not remount $SNAPSHOT_DIR readonly";
-#        exit;
-#    } fi;
+    mount -o remount,ro $MOUNT_DEVICE $SNAPSHOT_DIR ;
+    if (( $? )); then
+    {
+        echo "snapshot: could not remount $SNAPSHOT_DIR readonly";
+        exit;
+    } fi;
 }
 # ------------- the end--------------------------------------------------------
 
