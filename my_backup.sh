@@ -44,6 +44,7 @@ SNAPSHOT_DIR=/home/stevanatto/Dropbox/backup
 # directories to backup
 LOCATION=(
     /home/stevanatto/Documents
+    /home/stevanatto/Projects
 )
 #TODO: Perform tests with ssh locations
 #TODO: Perform tests where names contain spaces
