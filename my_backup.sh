@@ -149,7 +149,7 @@ function rotate() {
             #echo "$m $((ONE_YEAR -ONE_WEEK)) < $(( (DISTANCES[$m] -DISTANCES[$n] )%ONE_YEAR )),$(( (DISTANCES[$m] -DISTANCES[$n] )/ONE_YEAR )) < $((ONE_WEEK))"
         fi
     done
-    #TODO: If the interval between backups is more than one year you should cath another one, if it exist.
+    #TODO: If the interval between backups is more than one year you should catch another one, if it exist.
 
     # Test if it is a valid monthly backup
     MAX_DISTANCE=$((ONE_MONTH*MONTHLY_INTERVAL +ONE_DAY*DAILY_INTERVAL +ONE_DAY -ONE_HOUR))
@@ -176,7 +176,7 @@ function rotate() {
         fi
         #if (( ${DISTANCES[n]} < $((ONE_MONTH +ONE_DAY*DAILY_INTERVAL)) )); then break; fi
     done
-    #TODO: If the interval between backups is more than one month you should cath another one, if it exist.
+    #TODO: If the interval between backups is more than one month you should catch another one, if it exist.
 
     # Test if it is a valid daily backup
     MAX_DISTANCE=$((ONE_DAY*DAILY_INTERVAL +ONE_HOUR*HOURLY_INTERVAL))
