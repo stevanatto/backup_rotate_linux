@@ -24,30 +24,38 @@
 HOURLY_INTERVAL=4
 # make dayly snapshot
 DAILY_INTERVAL=3
+# make weekly snapshot
+WEEKLY_INTERVAL=3
 # make monthly snapshot
 MONTHLY_INTERVAL=2
 # make yearly snapshot - forever
 
 # No. parallel jobs to execute
-MAX_JOBS=1
-#TODO: perform tests with MAX_JOBS=2
+MAX_JOBS=2
 
 # ------------- file locations ------------------------------------------------
 MOUNT_DEVICE=/dev/hdb
 SNAPSHOT_DIR=/home/stevanatto/Dropbox/backup
 
+# Normally the SNAPSHOT_DIR is in a external device used with read only access
+# for extra security. Then you have to mount it with read and write access for a 
+# short time. Do not forget to full fill the fstab file with something like 
+# above. If you do not have external device keep the MOUNT_DEVICE in blank.
 # @/etc/fstab
 # /dev/hdb        /root/backup                            ext4    ro,errors=remount-ro    0       0
 # /root/backup    /var/local/backup                       none    bind,user,ro            0       0
+#TODO: Perform tests with sshfs locations (it only works if will not ask password).
 
 
-# directories to backup
+# directories to backup (do not finish with '/')
 LOCATION=(
     /home/stevanatto/Documents
     /home/stevanatto/Projects
 )
-#TODO: Perform tests with ssh locations
-#TODO: Perform tests where names contain spaces
+# examples:
+# /home/user/Documents
+# /home/user/Another\ Directory
+#
 
 # excludes
 EXCLUDES=(
@@ -65,11 +73,9 @@ MV=my_mv;
 
 # ------------- local variables -----------------------------------------------
 DATE_NOW=`date "+%Y-%m-%d-%Hh%Mm"`
-#DATE_NOW_S=`date +%s`
 
 # ------------- subroutines ---------------------------------------------------
 function snapshot() {
-    DATE_NOW_S=`date +%s`
     # extract only the last part of the location
     ADDRESS=${LOCATION##*/}
 
@@ -80,7 +86,7 @@ function snapshot() {
         # rsync from the system into the latest snapshot (notice that rsync behaves
         # like cp --remove-destination by default, so the destination is unlinked
         # first. If it were not so, this would copy over the other snapshot(s) too!
-        DATE_OLD=`ls -tArd $SNAPSHOT_DIR/$ADDRESS/* | tail -1`
+        DATE_OLD=`ls -tAd $SNAPSHOT_DIR/$ADDRESS/* | tail -1`
         DATE_OLD=${DATE_OLD##*/}
         rsync -qaAXEW `exclude` --delete \
             --link-dest=$SNAPSHOT_DIR/$ADDRESS/$DATE_OLD \
@@ -91,11 +97,11 @@ function snapshot() {
     else
         echo "First snapshot: $SNAPSHOT_DIR/$ADDRESS/$DATE_NOW"
         mkdir -p $SNAPSHOT_DIR/$ADDRESS/$DATE_NOW
-        rsync -qaAXEW --stats `exclude` $LOCATION/ $SNAPSHOT_DIR/$ADDRESS/$DATE_NOW;
+        rsync -qaAXEW --stats `exclude` $LOCATION/ $SNAPSHOT_DIR/$ADDRESS/$DATE_NOW
     fi
     
     # update the mtime of backup dir to reflect the snapshot time
-    touch $SNAPSHOT_DIR/$ADDRESS/$DATE_NOW
+    touch -a $SNAPSHOT_DIR/$ADDRESS/$DATE_NOW;
 
     # rotate snapshots
     # Check interval between backups and delete others.
@@ -103,7 +109,7 @@ function snapshot() {
     # ones.
     rotate
 
-    # and thats it !
+    # Main program is the last routine.
 }
 
 
@@ -121,123 +127,73 @@ function rotate() {
     ONE_WEEK=7*$ONE_DAY
     ONE_MONTH=30*$ONE_DAY
     ONE_YEAR=12*$ONE_MONTH
-    #DATE_NOW_S=`date "+%s"`
+    DATE_NOW_SEC=`date "+%s"`
     
     ALL_SNAPSHOTS=(`ls -tAd $SNAPSHOT_DIR/$ADDRESS/*`)
     DISTANCES=() # empty variable
     for n in ${!ALL_SNAPSHOTS[*]}; do
-        DISTANCES=(${DISTANCES[*]} $((DATE_NOW_S - `date -r ${ALL_SNAPSHOTS[$n]} +%s`)) )
+        #DISTANCES=(${DISTANCES[*]} $((DATE_NOW_SEC - `date -r ${ALL_SNAPSHOTS[$n]} +%s`)) )
+        # This solve the unexpected deleted backups if no modification exist.
+        DISTANCES=(${DISTANCES[*]} $((DATE_NOW_SEC - `stat ${ALL_SNAPSHOTS[$n]} --format=%X`)) )
     done
+    #echo ${DISTANCES[*]}
     
     # Inside the snapshot directory test every directory saved, where time is 
-    # his name (YYYY-MMM-DD-HH:MM). The test is the distance between two 
-    # snapshots.
-    m=$(( ${#ALL_SNAPSHOTS[*]} -1 ))
-    KEEP=( ${ALL_SNAPSHOTS[$m]} )
-    echo "$m ${ALL_SNAPSHOTS[(($m))]} is the oldest backup. Keep it."
-
-    # Test if it is a valid yearly backup
-    for (( n=${#ALL_SNAPSHOTS[*]}-2; n>=0; n-- )); do
-        #echo "$m,$n ${DISTANCES[$m]} - ${DISTANCES[$n]} = $((DISTANCES[$m] -DISTANCES[$n] )) / $ONE_YEAR = $(( (DISTANCES[$m] -DISTANCES[$n] )/ONE_YEAR )) , $(( (DISTANCES[$m] -DISTANCES[$n] )%ONE_YEAR ))     $((60*$ONE_DAY)) $((ONE_YEAR -60*ONE_DAY))"
-        if (( $(( (DISTANCES[$m] -DISTANCES[$n] )%ONE_YEAR )) > $((ONE_YEAR -ONE_WEEK)) )) || 
-        (( (( $(( (DISTANCES[$m] -DISTANCES[$n] )%ONE_YEAR )) < $ONE_WEEK )) &&
-           (( $(( (DISTANCES[$m] -DISTANCES[$n] )/ONE_YEAR )) > 0 )) ))
-        then
-            echo "$n ${ALL_SNAPSHOTS[$n]} is a valid YEARly backup for this location. Keep it."
-            KEEP=(${KEEP[*]} ${ALL_SNAPSHOTS[$n]} )
-            m=$n
-            #echo "$m $((ONE_YEAR -ONE_WEEK)) < $(( (DISTANCES[$m] -DISTANCES[$n] )%ONE_YEAR )),$(( (DISTANCES[$m] -DISTANCES[$n] )/ONE_YEAR )) < $((ONE_WEEK))"
-        fi
-    done
-    #TODO: If the interval between backups is more than one year you should catch another one, if it exist.
-
-    # Test if it is a valid monthly backup
-    MAX_DISTANCE=$((ONE_MONTH*MONTHLY_INTERVAL +ONE_DAY*DAILY_INTERVAL +ONE_DAY -ONE_HOUR))
-    for (( n=${#ALL_SNAPSHOTS[*]}-1; n>0; n-- )); do
-        #echo "$n  ${DISTANCES[$n]} < $MAX_DISTANCE "
-        if (( ${DISTANCES[$n]} < $MAX_DISTANCE )); then 
-             l=$n
-            MAX_DISTANCE=${DISTANCES[$n]}
-            break
-        fi
-    done
-    m=0
-    for (( n=l; n>0; n-- )); do
-        DISTANCE=$(( MAX_DISTANCE -DISTANCES[$n] ))
-        if (( (( $(( DISTANCE %ONE_MONTH )) > $((ONE_MONTH -ONE_DAY)) )) &&
-              (( $(( DISTANCE /ONE_MONTH )) > $((m-1)) )) )) ||
-           (( (( $(( DISTANCE %ONE_MONTH )) < $((ONE_DAY)) )) &&
-              (( $(( DISTANCE /ONE_MONTH )) >= $m )) ))
-        then
-            echo "$n ${ALL_SNAPSHOTS[$n]} is a valid MONTHly backup for this location. Keep it."
-            KEEP=(${KEEP[*]} ${ALL_SNAPSHOTS[$n]} )
-            ((m++))
-            #echo "$m $((ONE_MONTH -ONE_DAY)) < $((DISTANCE/ONE_MONTH)),$((DISTANCE%ONE_MONTH)) < $((ONE_DAY))"
-        fi
-        #if (( ${DISTANCES[n]} < $((ONE_MONTH +ONE_DAY*DAILY_INTERVAL)) )); then break; fi
-    done
-    #TODO: If the interval between backups is more than one month you should catch another one, if it exist.
-
-    # Test if it is a valid daily backup
-    MAX_DISTANCE=$((ONE_DAY*DAILY_INTERVAL +ONE_HOUR*HOURLY_INTERVAL))
-    for (( n=${#ALL_SNAPSHOTS[*]}-1; n>0; n-- )); do
-        #echo "$n  ${DISTANCES[$n]} < $MAX_DISTANCE "
-        if (( ${DISTANCES[$n]} < $MAX_DISTANCE )); then 
-             l=$n
-            MAX_DISTANCE=${DISTANCES[$n]}
-            break
-        fi
-    done
-    m=0
-    for (( n=l; n>0; n-- )); do
-        DISTANCE=$(( MAX_DISTANCE -DISTANCES[$n] ))
-        if (( (( $(( DISTANCE %ONE_DAY )) > $((ONE_DAY -ONE_HOUR)) )) &&
-              (( $(( DISTANCE /ONE_DAY )) > $((m-1)) )) )) ||
-           (( (( $(( DISTANCE %ONE_DAY )) < $((ONE_HOUR)) )) &&
-              (( $(( DISTANCE /ONE_DAY )) >= $m )) ))
-        then
-            echo "$n ${ALL_SNAPSHOTS[$n]} is a valid DAIly backup for this location. Keep it."
-            KEEP=(${KEEP[*]} ${ALL_SNAPSHOTS[$n]} )
-            ((m++))
-            #echo "$m $((ONE_DAY -ONE_HOUR)) < $((DISTANCE/ONE_DAY)),$((DISTANCE%ONE_DAY)) < $((ONE_HOUR))"
-        fi
-        #if (( ${DISTANCES[n]} < $((ONE_DAY +ONE_HOUR*HOURLY_INTERVAL +ONE_DAY)) )); then break; fi
-    done
-    #TODO: If the interval between backups is more than one day you should cath another one, if it exist.
-
-    # Test if it is a valid hourly backup
-    m=1
-    for (( n=1; n<${#ALL_SNAPSHOTS[*]}-1; n++ )); do
-        if (( (( $(( DISTANCES[$n] %ONE_HOUR )) > $((ONE_HOUR -5*ONE_MINUTE)) )) &&
-              (( $(( DISTANCES[$n] /ONE_HOUR )) > $((m-1)) )) )) ||
-           (( (( $(( DISTANCES[$n] %ONE_HOUR )) < $((5*ONE_MINUTE)) )) &&
-              (( $(( DISTANCES[$n] /ONE_HOUR )) >= $m )) ))
-        then
-            echo "$n ${ALL_SNAPSHOTS[$n]} is a valid HOURly backup for this location. Keep it."
-            KEEP=(${KEEP[*]} ${ALL_SNAPSHOTS[$n]} )
-            ((m++))
-            #echo "$m $((ONE_HOUR -5*ONE_MINUTE)) < $((DISTANCES[$n]/ONE_HOUR)),$(( DISTANCES[$n] %ONE_HOUR )) < $((5*ONE_MINUTE))"
-        fi
-        if (( ${DISTANCES[$n]} > $(((HOURLY_INTERVAL-1)*ONE_HOUR -5*ONE_MINUTE)) )); then break; fi
-    done
-
+    # his name (YYYY-MMM-DD-HH:MM). The test is the distance between the  
+    # snapshots and the reference like 1hour, 2hours, ..., 2days, 3days, ...
+    # That is saved in KEEP array.
     KEEP=(${KEEP[*]} ${ALL_SNAPSHOTS[0]} )
-    echo "0 ${ALL_SNAPSHOTS[0]} is the newest backup. Keep it."
+    echo "[0] ${ALL_SNAPSHOTS[0]} is the newest backup. Keep it."
+
+    echo "Test if it is a valid hourly backup (under $HOURLY_INTERVAL hours)."
+    validate_backups $HOURLY_INTERVAL $ONE_HOUR
+
+    echo "Test if it is a valid daily backup (under $DAILY_INTERVAL days)."
+    validate_backups $DAILY_INTERVAL $ONE_DAY
     
+    echo "Test if it is a valid weekly backup (under $WEEKLY_INTERVAL weeks)."
+    validate_backups $WEEKLY_INTERVAL $ONE_WEEK
+    
+    echo "Test if it is a valid monthly backup (under $MONTHLY_INTERVAL months)."
+    validate_backups $MONTHLY_INTERVAL $ONE_MONTH
+
+    echo "Test if it is a valid monthly backup (under 99 years)."
+    validate_backups 99 $ONE_YEAR
+
+    # report and delete
     for D in ${ALL_SNAPSHOTS[*]}; do
         if [[ ! " ${KEEP[@]} " =~ " ${D} " ]]; then
             echo "$D is an uncecessary backup. Delete it."
-            # DEBUG
-            #echo "$((ONE_YEAR -ONE_WEEK)) < $(( (DISTANCES[$m] -DISTANCES[$n] )%ONE_YEAR )),$(( (DISTANCES[$m] -DISTANCES[$n] )/ONE_YEAR )) < $((ONE_WEEK))"
-            #echo "$((ONE_MONTH -ONE_DAY)) < $((DISTANCE/ONE_MONTH)),$((DISTANCE%ONE_MONTH)) < $((ONE_DAY))"
-            #echo "$((ONE_DAY -ONE_HOUR)) < $((DISTANCE/ONE_DAY)),$((DISTANCE%ONE_DAY)) < $((ONE_HOUR))"
-            #echo "$((ONE_HOUR -5*ONE_MINUTE)) < $((DISTANCES[$n]/ONE_HOUR)),$(( DISTANCES[$n] %ONE_HOUR )) < $((5*ONE_MINUTE))"
-            # GUBED
             rm -fr "$D"
         fi
     done
 }
-# VERIFICAR O QUE ACONTECE COM OS LINKS DEPOIS DE ROTACIONAR E APAGAR OS LINKS CRIADOS PELO RSYNC DAS REFERENCIAS
+
+
+function validate_backups() {
+    TOTAL_INTERVALS=$1
+    DELTA_TIME=$2
+    m=1
+    for (( l=1; l<=$TOTAL_INTERVALS; l++ )); do
+        REFERENCE=$(( l *DELTA_TIME ))
+        for (( n=$m; n<${#ALL_SNAPSHOTS[*]}; n++ )); do
+            if (( (( $REFERENCE >= ${DISTANCES[$n]} )) &&
+                  (( ${DISTANCES[$n]} > ${DISTANCES[$m]} )) ))
+            then
+                #echo "[$m,$n] ${ALL_SNAPSHOTS[$n]} is something nearest from left side of the reference."
+                m=$n
+            fi
+        done
+        
+        if (( $(( REFERENCE -DISTANCES[$m] )) <= $DELTA_TIME  ))
+        then
+            echo "[$m] ${ALL_SNAPSHOTS[$m]} is a valid backup. Keep it."
+            KEEP=(${KEEP[*]} ${ALL_SNAPSHOTS[$m]} )
+        else
+            echo "[$m] ${ALL_SNAPSHOTS[$m]} is too far from referential and will not be included as valid backup."
+        fi
+    done
+}
 
 
 function exclude() {
@@ -279,35 +235,49 @@ function my_mv() {
     fi
 
     # attempt to remount the RW mount point as RW; else abort
-    mount -o remount,rw $MOUNT_DEVICE $SNAPSHOT_DIR ;
-    if (( $? )); then
+    if [[ $MOUNT_DEVICE  ]]; then
     {
-        echo "snapshot: could not remount $SNAPSHOT_DIR readwrite";
-        exit;
-    }
-    fi;
+        mount -o remount,rw $MOUNT_DEVICE $SNAPSHOT_DIR ;
+        if (( $? )); then
+        {
+            echo "snapshot: could not remount $SNAPSHOT_DIR readwrite";
+            exit;
+        } fi
+    } fi
 
+    # save and change IFS (for names paces)
+    OLDIFS=$IFS
+    IFS=$'\n'
+    
     # execute the jobs
-    if (( $MAX_JOBS > 0 )); then
-        for LOCATION in ${LOCATION[*]}; do
-            snapshot
-        done
-    else
+    if (( $MAX_JOBS > 1 )); then
         for LOCATION in ${LOCATION[*]}; do
             snapshot &
             forky
         done
+    else
+        for LOCATION in ${LOCATION[*]}; do
+            snapshot
+        done
     fi
 
     wait
-
+    
+    # restore IFS (for names paces)
+    IFS=$OLDIFS
+    
     # now remount the RW snapshot mountpoint as readonly
-    mount -o remount,ro $MOUNT_DEVICE $SNAPSHOT_DIR ;
-    if (( $? )); then
+    if [[ $MOUNT_DEVICE  ]]; then
     {
-        echo "snapshot: could not remount $SNAPSHOT_DIR readonly";
-        exit;
-    } fi;
+        mount -o remount,ro $MOUNT_DEVICE $SNAPSHOT_DIR ;
+        if (( $? )); then
+        {
+            echo "snapshot: could not remount $SNAPSHOT_DIR readonly";
+            exit;
+        } fi
+    } fi
+    
+    # That's all folks !
 }
 # ------------- the end--------------------------------------------------------
 
